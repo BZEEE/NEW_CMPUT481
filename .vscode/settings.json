@@ -4,6 +4,8 @@
         "random": "cpp",
         "vector": "cpp",
         "iostream": "cpp",
-        "algorithm": "cpp"
+        "algorithm": "cpp",
+        "ios": "cpp",
+        "xiosbase": "cpp"
     }
 }
