@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <random>
 
-// g++ sharedMemory.cpp -std=c++11 -lpthread
+// g++ sharedMemory.cpp -std=c++11  -lpthread -o psrs
 
 using namespace std;
 
@@ -44,20 +44,6 @@ struct phase_4_thread_data {
     long int *resultArray;
     long int mergeSize;
 };
-
-struct thread_data_for_merge {
-    int threadId;
-    long int *resultArray;
-    long int *list;
-    long int listSize;
-    long int partitionSize;
-    long int numThreads;
-    long int minPivot;
-    long int maxPivot;
-    long int exchangeSize;
-};
-
-
 
 int compare(const void* a, const void* b) {
     // returns a negative integer if the first argument is less than the second
@@ -109,13 +95,20 @@ void *exchangePartitions(void *threadData) {
     long int size;
     long int totalSize = 0;
     long int sectionSize;
+    // get the partition from each processor using the minPivot and maxPivot value ranges
     for (long int i = 0; i < numThreads; i++) {
+        // if the total size of the array is not evenly divisible by the number of processors
+        // then the partition from the last array is a different size from the other partitions
         if (i == numThreads - 1) {
             sectionSize = listSize - (partitionSize * (numThreads - 1));
         } else {
             sectionSize = partitionSize;
         }
         // use a sliding window approach
+        // have a pointer to the left side and the right side of the partition window
+        // traverse the left pointer to the right until it is greater than minPivot 
+        // traverse the right pointer to the left until it is less than than maxPivot 
+        // or unless the left and right pointer have crossed
         left = (i * partitionSize);
         right = (i * partitionSize) + sectionSize - 1;
         leftStop = false;
@@ -132,15 +125,13 @@ void *exchangePartitions(void *threadData) {
                 right--;
             }
         }
-        // cout << "left: " << left << "right: " << right << "\n";
+        // the left and right range is a section that this processor will merge with other sections
         size = right - left + 1;
         totalSize = totalSize + size;
-        // sections[i] = new section(left, size);
         struct section sec;
         sec.startIndex = left;
         sec.size = size;
         sections[i] = sec;
-        // cout << "processor: " << id << " section: " << sections[i].startIndex << " " << sections[i].size << " left: " << left << " right: " << right << "\n";
     }
     threadArgs->sections = sections;
 
@@ -158,10 +149,9 @@ void *mergePartitions(void *threadData) {
     long int * currentMerge = list + sections[0].startIndex;
     long int * currentPartition;
     long int * newPartition;
+    // assume first exchange section is always merged, this handles the case where we only have one processor (thread)
     long int mergedSize = sections[0].size;
-    // for (int i = 0; i < numThreads; i++) {
-    //     cout << "thread: " << id << " start: " << sections[i].startIndex << " size: " << sections[i].size << "\n";
-    // }
+    // for (p) number of processors there will be p sections we need to merge in this thread
     for (int i = 1; i < numThreads; i++) {
         currentPartition = list + sections[i].startIndex;
         newPartition = (long int *) malloc((mergedSize + sections[i].size) * sizeof(long int));
@@ -169,6 +159,7 @@ void *mergePartitions(void *threadData) {
         currentMerge = newPartition;
         mergedSize = mergedSize + sections[i].size;
     }
+    // return the merged arrays and the total size of the merged arrays
     threadArgs->resultArray = currentMerge;
     threadArgs->mergeSize = mergedSize;
 
@@ -176,118 +167,12 @@ void *mergePartitions(void *threadData) {
     pthread_exit(NULL);
 }
 
-void *mergeOnThread(void *threadData) {
-    // create a new vector
-    struct thread_data_for_merge *threadArgs;
-    threadArgs = (struct thread_data_for_merge *) threadData;
-    int id = threadArgs->threadId;
-    long int *resultArray = threadArgs->resultArray;
-    long int *list = threadArgs->list;
-    long int listSize = threadArgs->listSize;
-    long int partitionSize = threadArgs->partitionSize;
-    long int numThreads = threadArgs->numThreads;
-    long int minPivot = threadArgs->minPivot;
-    long int maxPivot = threadArgs->maxPivot;
-
-    struct section sections[numThreads];
-    // find all exchange sections from each partition for this particular processor
-    long int left;
-    long int right;
-    bool leftStop;
-    bool rightStop;
-    long int size;
-    long int totalSize = 0;
-    long int sectionSize;
-    for (long int i = 0; i < numThreads; i++) {
-        if (i == numThreads - 1) {
-            sectionSize = listSize - (partitionSize * (numThreads - 1));
-        } else {
-            sectionSize = partitionSize;
-        }
-        // use a sliding window approach
-        left = (i * partitionSize);
-        right = (i * partitionSize) + sectionSize - 1;
-        leftStop = false;
-        rightStop = false;
-        while ( left <= right && !(leftStop && rightStop) ) {
-            if (list[left] > minPivot) {
-                leftStop = true;
-            } else {
-                left++;
-            }
-            if (list[right] <= maxPivot) {
-                rightStop = true;
-            } else {
-                right--;
-            }
-        }
-        // cout << "left: " << left << "right: " << right << "\n";
-        size = right - left + 1;
-        totalSize = totalSize + size;
-        // sections[i] = new section(left, size);
-        struct section sec;
-        sec.startIndex = left;
-        sec.size = size;
-        sections[i] = sec;
-        // cout << "processor: " << id << " section: " << sections[i].startIndex << " " << sections[i].size << " left: " << left << " right: " << right << "\n";
-    }
-    // cout << "processor: " << id << " total size: " << totalSize << "\n";
-    // merge sections
-    // resultArray = (long int *) realloc(resultArray, totalSize * sizeof(long int));
-    //assume first partition is always merged 
-    long int * currentMerge = list + sections[0].startIndex;
-    long int * currentPartition;
-    long int * newPartition;
-    long int mergedSize = sections[0].size;
-    for (int i = 1; i < numThreads; i++) {
-        currentPartition = list + sections[i].startIndex;
-        newPartition = (long int *) malloc((mergedSize + sections[i].size) * sizeof(int));
-        merge(currentMerge, currentMerge + mergedSize, currentPartition, currentPartition + sections[i].size, newPartition);
-        currentMerge = newPartition;
-        mergedSize = mergedSize + sections[i].size;
-    }
-    threadArgs->resultArray = currentMerge;
-    threadArgs->exchangeSize = mergedSize;
-    // cout << "processor: " << id << " result array start: " << resultArray[0] << " \n";
-    
-    // for (int k = 0; k < mergedSize; k++) {
-    //     cout << "thread: " << id << ", value = " << threadArgs->resultArray[k] << "\n";
-    // }
-    // long int sectionSize;
-    // long int item;
-    // // merge partitions together and sort elements as they are inserted
-    // for (long int i = 0; i < numThreads; i++) {
-    //     if (i == numThreads - 1) {
-    //         sectionSize = listSize - (partitionSize * (numThreads - 1));
-    //     } else {
-    //         sectionSize = partitionSize;
-    //     }
-    //     for (long int j = 0; j < sectionSize; j++) {
-    //         // cout << "access array item: " << (i * partitionSize) + j << "\n";
-    //         item = list[(i * partitionSize) + j];
-    //         // perform a sort as we merge
-    //         if (item > minPivot && item <= maxPivot) {
-    //             // insert item at beginning
-    //             resultArray->insert(resultArray->begin(), item);
-    //             // always keep vector sorted
-                
-                
-    //         }
-    //     }
-    // }
-    // sort(resultArray->begin(), resultArray->end());
-    // cout << "thread exit: processor " << id << "\n";
-    //close the thread
-    pthread_exit(NULL);
-}
-
 int main() {
-    // generate a random array of 1 million integers
     // use time as the seed since it is a number that changes all the time
     // default_random_engine generator;
     srand(time(NULL));
     
-    const long int listSize = 32000000;
+    const long int listSize = 10000000;
     long int *array = new long int[listSize];
     long int MAX_NUM = 2147483647;
     for (long int i = 0; i < listSize; i++) {
@@ -321,7 +206,6 @@ int main() {
         // segment list into (list size / number of threads) partitions, pass each partition to a thread to sort it
         phase1ThreadData[i].threadId = i;
         phase1ThreadData[i].list = &array[i * partitionSize];
-        // threadData[i].listStartIndex = i * partitionSize;
         // the list and number of processors isnt always evenly divisible
         // have to account for the last array
         if (i == numThreads - 1) {
@@ -342,12 +226,6 @@ int main() {
 
     // stop the clock for Phase 1
     clock_t phase1Stop = clock();
-
-    // cout << "\nAfter Phase 1:\n";
-    // for(int i = 0; i < listSize; i++) {
-    //     cout << array[i] << " ";
-    // };
-    // cout << "\n";
 
 
     // --------------------------------------------------------------------------------------------------------//
@@ -372,7 +250,6 @@ int main() {
     long int regularSamplePivotSeparation = floor(sampleSize / numThreads);
     for (long int i = 1; i < numThreads; i++) {
         regularSamplePivots[i-1] = gatheredRegularSample[i * regularSamplePivotSeparation];
-        // cout << regularSamplePivots[i-1] << " ";
     }
 
     // stop the clock for Phase 2
@@ -382,25 +259,11 @@ int main() {
     // ------------------------------------- Phase 3 ----------------------------------------------------------//
     // --------------------------------------------------------------------------------------------------------//
     // exchange partitions with each processor based on regular sample pivots
-    // loop through list size_t
-    // but know when to compare to a certain pivot
-
-    // cout << "pivots: ";
-    // for (int i = 0; i < numThreads - 1; i++) {
-    //     cout << regularSamplePivots[i] << " ";
-    // }
-    // // cout << partitionSize << "\n";
-    // cout << "\n";
-
     pthread_t phase3Threads [numThreads];
     struct phase_3_thread_data phase3ThreadData[numThreads];
-    // let each thread merge its parts based on the pivots
-    
-    // std::vector<std::vector<int>> v(10, std::vector<int>(5));
+    // let each thread determine its exchange sections based on the pivots
 
     for (long int i = 0; i < numThreads; i++) {
-        // segment list into (list size / number of threads) partitions, pass each partition to a thread to sort it
-        // processorResults[i] = vector<long int>(0);
         // thread arguments
         phase3ThreadData[i].threadId = i;
         phase3ThreadData[i].numThreads = numThreads;
@@ -408,6 +271,7 @@ int main() {
         phase3ThreadData[i].listSize = listSize;
         phase3ThreadData[i].partitionSize = partitionSize;
 
+        // set the min and max pivot range for this processor
         if (i == 0) {
             phase3ThreadData[i].minPivot = -1;
             phase3ThreadData[i].maxPivot = regularSamplePivots[i];
@@ -420,22 +284,13 @@ int main() {
         }
 
         pthread_create(&phase3Threads[i], NULL, exchangePartitions, (void *) &phase3ThreadData[i]);
-        // allows us to wait till all threads are completed in the group before continuing to do the sequential part of our algorithms
     }
 
-    // join all the threads together to sync end of phase 1 with beginning of phase 2
+    // join all the threads together to sync for phase 3
     for (long int i = 0; i < numThreads; i++) {
-        // allows us to wait till all threads are completed in the group before continuing to do the sequential part of our algorithms
+        // allows us to wait till all threads are completed in the group before moving on to phase 4
         pthread_join(phase3Threads[i], NULL);
     }
-
-    
-
-    // cout << "\nAfter Phase 3\n";
-    // for (long int i = 0; i < numThreads; i++) {
-    //     cout << "processor: " << i << " exchange size" << phase3ThreadData[i].exchangeSize << "\n";
-    // }
-    // cout << "\n";
 
 
     // stop the clock for Phase 3
@@ -445,22 +300,12 @@ int main() {
     // --------------------------------------------------------------------------------------------------------//
     // ------------------------------------- Phase 4 ----------------------------------------------------------//
     // --------------------------------------------------------------------------------------------------------//
-    // merger the vectors back to the main array memory slots
-    // this allows us to skip the merge step for phase 4, since
-    // the exchanged partitions or sorted in place right next to each other
-    // by each process
-
+    // merge the exchanged sections together for each processor
     pthread_t phase4Threads [numThreads];
     struct phase_4_thread_data phase4ThreadData[numThreads];
-    // let each thread merge its parts based on the pivots
 
+    // let each thread merge its parts based on sections from phase 3
     for (long int i = 0; i < numThreads; i++) {
-        // segment list into (list size / number of threads) partitions, pass each partition to a thread to sort it
-        // processorResults[i] = vector<long int>(0);
-        // thread arguments
-        // for (int j = 0; j < numThreads; j++) {
-        //     cout << "start: " << phase3ThreadData[i].sections[j].startIndex << " size: " << phase3ThreadData[i].sections[j].size << "\n";
-        // }
         phase4ThreadData[i].threadId = i;
         phase4ThreadData[i].sections = phase3ThreadData[i].sections;
         phase4ThreadData[i].list = array;
@@ -472,22 +317,18 @@ int main() {
 
     // join all the threads together to sync
     for (long int i = 0; i < numThreads; i++) {
-        // allows us to wait till all threads are completed in the group before continuing to do the sequential part of our algorithms
+        // allows us to wait till all threads are completed in order to concatenate the merged partitions from each processor
         pthread_join(phase4Threads[i], NULL);
     }
 
-    // cout << "\nfinal sorted list\n";
     // concatenate arrays together
     long int counter = 0;
     for (long int i = 0; i < numThreads; i++) {
-        // cout << "processor: " << i << " exchange size" << phase3ThreadData[i].exchangeSize << "\n";
         for (int j = 0; j < phase4ThreadData[i].mergeSize; j++) {
-            // cout << phase4ThreadData[i].resultArray[j] << " ";
             array[counter] = phase4ThreadData[i].resultArray[j];
             counter++;
         }
     }
-    // cout << "\n";
 
     // stop the clock for Phase 4
     clock_t phase4Stop = clock();
