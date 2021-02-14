@@ -1,4 +1,5 @@
 
+#include "mpi.h"
 #include <iostream>
 #include <time.h>
 #include <cstdlib>
@@ -9,6 +10,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <random>
+
 
 // g++ sharedMemory.cpp -std=c++11  -lpthread -o psrs
 
